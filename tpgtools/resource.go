@@ -127,9 +127,6 @@ type Resource struct {
 	// call
 	CustomCreateDirectiveFunction *string
 
-	// Undeletable is true if this resource has no delete method.
-	Undeletable bool
-
 	// SkipDeleteFunction is the name of a function that takes the
 	// object and config and returns a boolean for if Terraform should make
 	// the delete call for the resource
@@ -539,9 +536,6 @@ func createResource(schema *openapi.Schema, typeFetcher *TypeFetcher, overrides 
 	if createDirectiveFuncOk {
 		res.CustomCreateDirectiveFunction = &createDirectiveFunc.Function
 	}
-
-	// Resource Override: Undeletable
-	res.Undeletable = overrides.ResourceOverride(Undeletable, location)
 
 	// Resource Override: SkipDeleteFunction
 	skipDeleteFunc := SkipDeleteFunctionDetails{}
