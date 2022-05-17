@@ -1,0 +1,70 @@
+resource "google_project" "project" {
+  provider = google-beta
+
+  project_id      = "tf-test%{random_suffix}"
+  name            = "tf-test%{random_suffix}"
+  org_id          = "<%= ctx[:test_env_vars]['org_id'] %>"
+  billing_account = "<%= ctx[:test_env_vars]['billing_account'] %>"
+}
+
+resource "google_project_service" "apigee_apihub" {
+  provider = google-beta
+
+  project = google_project.project.project_id
+  service = "apigeeregistry.googleapis.com"
+}
+
+resource "google_project_service" "kms" {
+  provider = google-beta
+
+  project = google_project.project.project_id
+  service = "cloudkms.googleapis.com"
+}
+
+resource "google_kms_key_ring" "apigee_apihub_keyring" {
+  provider = google-beta
+
+  name       = "apigee_apihub-keyring"
+  location   = "us-central1"
+  project    = google_project.project.project_id
+  depends_on = [google_project_service.kms]
+}
+
+resource "google_kms_crypto_key" "apigee_apihub_key" {
+  provider = google-beta
+
+  name     = "apigee_apihub-key"
+  key_ring = google_kms_key_ring.apigee_apihub_keyring.id
+}
+
+resource "google_project_service_identity" "apigee_apihub_sa" {
+  provider = google-beta
+
+  project = google_project.project.project_id
+  service = google_project_service.apigee_apihub.service
+}
+
+resource "google_kms_crypto_key_iam_binding" "apigee_apihub_sa_keyuser" {
+  provider = google-beta
+
+  crypto_key_id = google_kms_crypto_key.apigee_apihub_key.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+
+  members = [
+    "serviceAccount:${google_project_service_identity.apigee_apihub_sa.email}",
+  ]
+}
+
+resource "google_apigee_apihub_instance" "<%= ctx[:primary_resource_id] %>" {
+  provider = google-beta
+
+  project_id  = google_project.project.project_id
+  location_id = "us-central1"
+  config {
+    cmek_key_name = google_kms_crypto_key.apigee_apihub_key.id
+  }
+
+  depends_on = [
+    google_kms_crypto_key_iam_binding.apigee_apihub_sa_keyuser,
+  ]
+}

@@ -1,0 +1,51 @@
+data "google_client_config" "current" {}
+
+resource "google_project_service" "apigee_apihub" {
+  project = data.google_client_config.current.project
+  service = "apigeeregistry.googleapis.com"
+}
+
+resource "google_project_service" "kms" {
+  project = data.google_client_config.current.project
+  service = "cloudkms.googleapis.com"
+}
+
+resource "google_kms_key_ring" "apigee_apihub_keyring" {
+  name       = "apigee_apihub-keyring"
+  location   = "us-central1"
+  project    = data.google_client_config.current.project
+  depends_on = [google_project_service.kms]
+}
+
+resource "google_kms_crypto_key" "apigee_apihub_key" {
+  name     = "apigee_apihub-key"
+  key_ring = google_kms_key_ring.apigee_apihub_keyring.id
+}
+
+resource "google_project_service_identity" "apigee_apihub_sa" {
+  provider = google-beta
+
+  project = data.google_client_config.current.project
+  service = google_project_service.apigee_apihub.service
+}
+
+resource "google_kms_crypto_key_iam_binding" "apigee_apihub_sa_keyuser" {
+  crypto_key_id = google_kms_crypto_key.apigee_apihub_key.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+
+  members = [
+    "serviceAccount:${google_project_service_identity.apigee_apihub_sa.email}",
+  ]
+}
+
+resource "google_apigee_apihub_instance" "apigee_apihub_instance" {
+  project_id  = data.google_client_config.current.project
+  location_id = "us-central1"
+  config {
+    cmek_key_name = google_kms_crypto_key.apigee_apihub_key.id
+  }
+
+  depends_on = [
+    google_kms_crypto_key_iam_binding.apigee_apihub_sa_keyuser,
+  ]
+}
